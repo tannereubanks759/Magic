@@ -36,6 +36,15 @@ public class Shoot : MonoBehaviour
             anim.SetBool("fire", false);
             anim.SetBool("hold", false);
         }
+        if (Input.GetButton("Fire2"))
+        {
+            anim.SetBool("light", true);
+        }
+        else
+        {
+            anim.SetBool("light", false);
+            
+        }
     }
     void FireBall()
     {
