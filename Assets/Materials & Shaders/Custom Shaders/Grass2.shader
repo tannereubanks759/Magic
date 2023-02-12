@@ -1,11 +1,21 @@
 // Made with Amplify Shader Editor v1.9.1.3
 // Available at the Unity Asset Store - http://u3d.as/y3X 
-Shader "Grass"
+Shader "Grass2"
 {
 	Properties
 	{
 		[HideInInspector] _AlphaCutoff("Alpha Cutoff ", Range(0, 1)) = 0.5
 		[HideInInspector] _EmissionColor("Emission Color", Color) = (1,1,1,1)
+		[ASEBegin]_FluffyScale("Fluffy Scale", Float) = 0
+		_SSSSize("SSS Size", Float) = 0
+		_SSSColor("SSS Color", Color) = (1,1,1,0)
+		_FoliageTexture("Foliage Texture", 2D) = "white" {}
+		_Smoothness("Smoothness", Range( 0 , 1)) = 0.3
+		[HDR]_FoliageColor("Foliage Color", Color) = (1,1,1,0)
+		_WindNoiseTex("Wind Noise Tex", 2D) = "white" {}
+		_WindScroll("Wind Scroll", Float) = 0
+		[ASEEnd]_WindJitter("Wind Jitter", Float) = 0
+		[HideInInspector] _texcoord( "", 2D ) = "white" {}
 
 
 		//_TransmissionShadow( "Transmission Shadow", Range( 0, 1 ) ) = 0.5
@@ -40,10 +50,10 @@ Shader "Grass"
 
 		
 
-		Tags { "RenderPipeline"="UniversalPipeline" "RenderType"="Transparent" "Queue"="Transparent" }
+		Tags { "RenderPipeline"="UniversalPipeline" "RenderType"="Opaque" "Queue"="Geometry" }
 
 		Cull Back
-		ZWrite Off
+		ZWrite On
 		ZTest LEqual
 		Offset 0 , 0
 		AlphaToMask Off
@@ -168,7 +178,7 @@ Shader "Grass"
 			Name "Forward"
 			Tags { "LightMode"="UniversalForward" }
 
-			Blend SrcAlpha OneMinusSrcAlpha, One OneMinusSrcAlpha
+			Blend One Zero, One Zero
 			ZWrite On
 			ZTest LEqual
 			Offset 0 , 0
@@ -184,7 +194,8 @@ Shader "Grass"
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#pragma multi_compile_fog
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -232,6 +243,7 @@ Shader "Grass"
 
 			#define ASE_NEEDS_VERT_TANGENT
 			#define ASE_NEEDS_VERT_NORMAL
+			#define ASE_NEEDS_FRAG_WORLD_VIEW_DIR
 
 
 			struct VertexInput
@@ -263,13 +275,22 @@ Shader "Grass"
 				#if defined(DYNAMICLIGHTMAP_ON)
 					float2 dynamicLightmapUV : TEXCOORD7;
 				#endif
-				
+				float4 ase_texcoord8 : TEXCOORD8;
+				float4 ase_texcoord9 : TEXCOORD9;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -301,7 +322,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/PBRForwardPass.hlsl"
@@ -318,16 +341,27 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord8.xy = v.texcoord.xy;
+				o.ase_texcoord9 = v.vertex;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord8.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -335,7 +369,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -536,16 +570,27 @@ Shader "Grass"
 
 				WorldViewDirection = SafeNormalize( WorldViewDirection );
 
+				float2 uv_FoliageTexture = IN.ase_texcoord8.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float4 Albedo37 = ( _FoliageColor * tex2DNode34 );
+				
+				float3 objToWorldDir28 = mul( GetObjectToWorldMatrix(), float4( IN.ase_texcoord9.xyz, 0 ) ).xyz;
+				float dotResult21 = dot( WorldViewDirection , -( _MainLightPosition.xyz + ( objToWorldDir28 * _SSSSize ) ) );
+				float4 blendOpSrc43 = _SSSColor;
+				float4 blendOpDest43 = Albedo37;
+				float4 PsuedoSSS23 = ( saturate( dotResult21 ) * ( ( saturate( ( 1.0 - ( ( 1.0 - blendOpDest43) / max( blendOpSrc43, 0.00001) ) ) )) * _MainLightColor ) );
+				
+				float Alpha38 = tex2DNode34.a;
 				
 
-				float3 BaseColor = float3(0.5, 0.5, 0.5);
+				float3 BaseColor = Albedo37.rgb;
 				float3 Normal = float3(0, 0, 1);
-				float3 Emission = 0;
+				float3 Emission = PsuedoSSS23.rgb;
 				float3 Specular = 0.5;
 				float Metallic = 0;
-				float Smoothness = 0.5;
+				float Smoothness = _Smoothness;
 				float Occlusion = 1;
-				float Alpha = 1;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 				float AlphaClipThresholdShadow = 0.5;
 				float3 BakedGI = 0;
@@ -759,7 +804,8 @@ Shader "Grass"
 			#pragma multi_compile_instancing
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -800,13 +846,21 @@ Shader "Grass"
 				#if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR) && defined(ASE_NEEDS_FRAG_SHADOWCOORDS)
 					float4 shadowCoord : TEXCOORD1;
 				#endif
-				
+				float4 ase_texcoord2 : TEXCOORD2;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -838,7 +892,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/ShadowCasterPass.hlsl"
@@ -858,16 +914,26 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( o );
 
-				float2 texCoord10 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord2.xy = v.ase_texcoord.xy;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord2.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -875,7 +941,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
 				#else
@@ -1030,9 +1096,12 @@ Shader "Grass"
 					#endif
 				#endif
 
+				float2 uv_FoliageTexture = IN.ase_texcoord2.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float Alpha38 = tex2DNode34.a;
 				
 
-				float Alpha = 1;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 				float AlphaClipThresholdShadow = 0.5;
 
@@ -1078,7 +1147,8 @@ Shader "Grass"
 			#pragma multi_compile_instancing
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -1117,13 +1187,21 @@ Shader "Grass"
 				#if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR) && defined(ASE_NEEDS_FRAG_SHADOWCOORDS)
 				float4 shadowCoord : TEXCOORD1;
 				#endif
-				
+				float4 ase_texcoord2 : TEXCOORD2;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -1155,7 +1233,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/DepthOnlyPass.hlsl"
@@ -1172,16 +1252,26 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord2.xy = v.ase_texcoord.xy;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord2.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -1189,7 +1279,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -1329,9 +1419,12 @@ Shader "Grass"
 					#endif
 				#endif
 
+				float2 uv_FoliageTexture = IN.ase_texcoord2.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float Alpha38 = tex2DNode34.a;
 				
 
-				float Alpha = 1;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 				#ifdef ASE_DEPTH_WRITE_ON
 					float DepthValue = 0;
@@ -1368,7 +1461,8 @@ Shader "Grass"
 			#define _NORMAL_DROPOFF_TS 1
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -1390,6 +1484,7 @@ Shader "Grass"
 			#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/ShaderPass.hlsl"
 
 			#define ASE_NEEDS_VERT_NORMAL
+			#define ASE_NEEDS_FRAG_WORLD_POSITION
 
 
 			struct VertexInput
@@ -1416,13 +1511,22 @@ Shader "Grass"
 					float4 VizUV : TEXCOORD2;
 					float4 LightCoord : TEXCOORD3;
 				#endif
-				
+				float4 ase_texcoord4 : TEXCOORD4;
+				float4 ase_texcoord5 : TEXCOORD5;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -1454,7 +1558,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/LightingMetaPass.hlsl"
@@ -1471,16 +1577,27 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.texcoord0.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.texcoord0.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord4.xy = v.texcoord0.xy;
+				o.ase_texcoord5 = v.vertex;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord4.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -1488,7 +1605,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -1632,11 +1749,24 @@ Shader "Grass"
 					#endif
 				#endif
 
+				float2 uv_FoliageTexture = IN.ase_texcoord4.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float4 Albedo37 = ( _FoliageColor * tex2DNode34 );
+				
+				float3 ase_worldViewDir = ( _WorldSpaceCameraPos.xyz - WorldPosition );
+				ase_worldViewDir = normalize(ase_worldViewDir);
+				float3 objToWorldDir28 = mul( GetObjectToWorldMatrix(), float4( IN.ase_texcoord5.xyz, 0 ) ).xyz;
+				float dotResult21 = dot( ase_worldViewDir , -( _MainLightPosition.xyz + ( objToWorldDir28 * _SSSSize ) ) );
+				float4 blendOpSrc43 = _SSSColor;
+				float4 blendOpDest43 = Albedo37;
+				float4 PsuedoSSS23 = ( saturate( dotResult21 ) * ( ( saturate( ( 1.0 - ( ( 1.0 - blendOpDest43) / max( blendOpSrc43, 0.00001) ) ) )) * _MainLightColor ) );
+				
+				float Alpha38 = tex2DNode34.a;
 				
 
-				float3 BaseColor = float3(0.5, 0.5, 0.5);
-				float3 Emission = 0;
-				float Alpha = 1;
+				float3 BaseColor = Albedo37.rgb;
+				float3 Emission = PsuedoSSS23.rgb;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 
 				#ifdef _ALPHATEST_ON
@@ -1663,7 +1793,7 @@ Shader "Grass"
 			Name "Universal2D"
 			Tags { "LightMode"="Universal2D" }
 
-			Blend SrcAlpha OneMinusSrcAlpha, One OneMinusSrcAlpha
+			Blend One Zero, One Zero
 			ZWrite On
 			ZTest LEqual
 			Offset 0 , 0
@@ -1674,7 +1804,8 @@ Shader "Grass"
 			#define _NORMAL_DROPOFF_TS 1
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -1713,13 +1844,21 @@ Shader "Grass"
 				#if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR) && defined(ASE_NEEDS_FRAG_SHADOWCOORDS)
 					float4 shadowCoord : TEXCOORD1;
 				#endif
-				
+				float4 ase_texcoord2 : TEXCOORD2;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -1751,7 +1890,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/PBR2DPass.hlsl"
@@ -1768,16 +1909,26 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID( v, o );
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO( o );
 
-				float2 texCoord10 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord2.xy = v.ase_texcoord.xy;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord2.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -1785,7 +1936,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -1916,10 +2067,15 @@ Shader "Grass"
 					#endif
 				#endif
 
+				float2 uv_FoliageTexture = IN.ase_texcoord2.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float4 Albedo37 = ( _FoliageColor * tex2DNode34 );
+				
+				float Alpha38 = tex2DNode34.a;
 				
 
-				float3 BaseColor = float3(0.5, 0.5, 0.5);
-				float Alpha = 1;
+				float3 BaseColor = Albedo37.rgb;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 
 				half4 color = half4(BaseColor, Alpha );
@@ -1951,7 +2107,8 @@ Shader "Grass"
 			#pragma multi_compile_instancing
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -1993,13 +2150,21 @@ Shader "Grass"
 				#endif
 				float3 worldNormal : TEXCOORD2;
 				float4 worldTangent : TEXCOORD3;
-				
+				float4 ase_texcoord4 : TEXCOORD4;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -2031,7 +2196,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/DepthNormalsOnlyPass.hlsl"
@@ -2048,23 +2215,33 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord4.xy = v.ase_texcoord.xy;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord4.zw = 0;
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
 				#else
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -2211,10 +2388,13 @@ Shader "Grass"
 					#endif
 				#endif
 
+				float2 uv_FoliageTexture = IN.ase_texcoord4.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float Alpha38 = tex2DNode34.a;
 				
 
 				float3 Normal = float3(0, 0, 1);
-				float Alpha = 1;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 				#ifdef ASE_DEPTH_WRITE_ON
 					float DepthValue = 0;
@@ -2264,7 +2444,7 @@ Shader "Grass"
 			Name "GBuffer"
 			Tags { "LightMode"="UniversalGBuffer" }
 
-			Blend SrcAlpha OneMinusSrcAlpha, One OneMinusSrcAlpha
+			Blend One Zero, One Zero
 			ZWrite On
 			ZTest LEqual
 			Offset 0 , 0
@@ -2279,7 +2459,8 @@ Shader "Grass"
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#pragma multi_compile_fog
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -2323,6 +2504,7 @@ Shader "Grass"
 
 			#define ASE_NEEDS_VERT_TANGENT
 			#define ASE_NEEDS_VERT_NORMAL
+			#define ASE_NEEDS_FRAG_WORLD_VIEW_DIR
 
 
 			struct VertexInput
@@ -2354,13 +2536,22 @@ Shader "Grass"
 				#if defined(DYNAMICLIGHTMAP_ON)
 				float2 dynamicLightmapUV : TEXCOORD7;
 				#endif
-				
+				float4 ase_texcoord8 : TEXCOORD8;
+				float4 ase_texcoord9 : TEXCOORD9;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -2392,7 +2583,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UnityGBuffer.hlsl"
@@ -2406,23 +2599,34 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord8.xy = v.texcoord.xy;
+				o.ase_texcoord9 = v.vertex;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord8.zw = 0;
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
 				#else
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -2620,16 +2824,27 @@ Shader "Grass"
 
 				WorldViewDirection = SafeNormalize( WorldViewDirection );
 
+				float2 uv_FoliageTexture = IN.ase_texcoord8.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float4 Albedo37 = ( _FoliageColor * tex2DNode34 );
+				
+				float3 objToWorldDir28 = mul( GetObjectToWorldMatrix(), float4( IN.ase_texcoord9.xyz, 0 ) ).xyz;
+				float dotResult21 = dot( WorldViewDirection , -( _MainLightPosition.xyz + ( objToWorldDir28 * _SSSSize ) ) );
+				float4 blendOpSrc43 = _SSSColor;
+				float4 blendOpDest43 = Albedo37;
+				float4 PsuedoSSS23 = ( saturate( dotResult21 ) * ( ( saturate( ( 1.0 - ( ( 1.0 - blendOpDest43) / max( blendOpSrc43, 0.00001) ) ) )) * _MainLightColor ) );
+				
+				float Alpha38 = tex2DNode34.a;
 				
 
-				float3 BaseColor = float3(0.5, 0.5, 0.5);
+				float3 BaseColor = Albedo37.rgb;
 				float3 Normal = float3(0, 0, 1);
-				float3 Emission = 0;
+				float3 Emission = PsuedoSSS23.rgb;
 				float3 Specular = 0.5;
 				float Metallic = 0;
-				float Smoothness = 0.5;
+				float Smoothness = _Smoothness;
 				float Occlusion = 1;
-				float Alpha = 1;
+				float Alpha = Alpha38;
 				float AlphaClipThreshold = 0.5;
 				float AlphaClipThresholdShadow = 0.5;
 				float3 BakedGI = 0;
@@ -2746,7 +2961,8 @@ Shader "Grass"
 			#define _NORMAL_DROPOFF_TS 1
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -2783,13 +2999,21 @@ Shader "Grass"
 			struct VertexOutput
 			{
 				float4 clipPos : SV_POSITION;
-				
+				float4 ase_texcoord : TEXCOORD0;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -2821,7 +3045,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/SelectionPickingPass.hlsl"
@@ -2846,16 +3072,26 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord.xy = v.ase_texcoord.xy;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -2863,7 +3099,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -2967,9 +3203,12 @@ Shader "Grass"
 			{
 				SurfaceDescription surfaceDescription = (SurfaceDescription)0;
 
+				float2 uv_FoliageTexture = IN.ase_texcoord.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float Alpha38 = tex2DNode34.a;
 				
 
-				surfaceDescription.Alpha = 1;
+				surfaceDescription.Alpha = Alpha38;
 				surfaceDescription.AlphaClipThreshold = 0.5;
 
 				#if _ALPHATEST_ON
@@ -3006,7 +3245,8 @@ Shader "Grass"
 			#define _NORMAL_DROPOFF_TS 1
 			#pragma multi_compile _ LOD_FADE_CROSSFADE
 			#define ASE_FOG 1
-			#define _SURFACE_TYPE_TRANSPARENT 1
+			#define _EMISSION
+			#define _ALPHATEST_ON 1
 			#define ASE_SRP_VERSION 120108
 
 
@@ -3043,13 +3283,21 @@ Shader "Grass"
 			struct VertexOutput
 			{
 				float4 clipPos : SV_POSITION;
-				
+				float4 ase_texcoord : TEXCOORD0;
 				UNITY_VERTEX_INPUT_INSTANCE_ID
 				UNITY_VERTEX_OUTPUT_STEREO
 			};
 
 			CBUFFER_START(UnityPerMaterial)
-						#ifdef ASE_TRANSMISSION
+			float4 _FoliageColor;
+			float4 _FoliageTexture_ST;
+			float4 _SSSColor;
+			float _FluffyScale;
+			float _WindScroll;
+			float _WindJitter;
+			float _SSSSize;
+			float _Smoothness;
+			#ifdef ASE_TRANSMISSION
 				float _TransmissionShadow;
 			#endif
 			#ifdef ASE_TRANSLUCENCY
@@ -3081,7 +3329,9 @@ Shader "Grass"
 				int _PassValue;
 			#endif
 
-			
+			sampler2D _WindNoiseTex;
+			sampler2D _FoliageTexture;
+
 
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/Varyings.hlsl"
 			//#include "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/SelectionPickingPass.hlsl"
@@ -3106,16 +3356,26 @@ Shader "Grass"
 				UNITY_TRANSFER_INSTANCE_ID(v, o);
 				UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
-				float2 texCoord10 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
+				float2 texCoord12 = v.ase_texcoord.xy * float2( 1,1 ) + float2( 0,0 );
 				float2 temp_cast_0 = (-1.0).xx;
 				float3 ase_worldTangent = TransformObjectToWorldDir(v.ase_tangent.xyz);
 				float3 ase_worldNormal = TransformObjectToWorldNormal(v.ase_normal);
 				float ase_vertexTangentSign = v.ase_tangent.w * ( unity_WorldTransformParams.w >= 0.0 ? 1.0 : -1.0 );
 				float3 ase_worldBitangent = cross( ase_worldNormal, ase_worldTangent ) * ase_vertexTangentSign;
 				float3x3 ase_tangentToWorldFast = float3x3(ase_worldTangent.x,ase_worldBitangent.x,ase_worldNormal.x,ase_worldTangent.y,ase_worldBitangent.y,ase_worldNormal.y,ase_worldTangent.z,ase_worldBitangent.z,ase_worldNormal.z);
-				float3 tangentTobjectDir16 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord10 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
-				float3 QuadScatter18 = tangentTobjectDir16;
+				float3 tangentTobjectDir14 = mul( GetWorldToObjectMatrix(), float4( mul( ase_tangentToWorldFast, float3( (temp_cast_0 + (texCoord12 - float2( 0,0 )) * (float2( 1,1 ) - temp_cast_0) / (float2( 1,1 ) - float2( 0,0 ))) ,  0.0 ) ), 0 ) ).xyz;
+				float3 ase_worldPos = TransformObjectToWorld( (v.vertex).xyz );
+				float2 appendResult49 = (float2(ase_worldPos.x , ase_worldPos.z));
+				float2 temp_output_50_0 = ( appendResult49 * 0.1 );
+				float2 panner54 = ( ( _WindScroll * _TimeParameters.x ) * float2( 1,1 ) + temp_output_50_0);
+				float2 panner65 = ( ( _TimeParameters.x * _WindJitter ) * float2( 0,0 ) + ( temp_output_50_0 * float2( 2,2 ) ));
+				float4 WindScrolling58 = ( pow( tex2Dlod( _WindNoiseTex, float4( panner54, 0, 0.0) ) , 1.5 ) * tex2Dlod( _WindNoiseTex, float4( panner65, 0, 0.0) ) );
+				float4 QuadScatter16 = ( float4( ( tangentTobjectDir14 * _FluffyScale ) , 0.0 ) + ( float4( v.ase_normal , 0.0 ) * WindScrolling58 ) );
 				
+				o.ase_texcoord.xy = v.ase_texcoord.xy;
+				
+				//setting value to unused interpolator channels and avoid initialization warnings
+				o.ase_texcoord.zw = 0;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					float3 defaultVertexValue = v.vertex.xyz;
@@ -3123,7 +3383,7 @@ Shader "Grass"
 					float3 defaultVertexValue = float3(0, 0, 0);
 				#endif
 
-				float3 vertexValue = QuadScatter18;
+				float3 vertexValue = QuadScatter16.rgb;
 
 				#ifdef ASE_ABSOLUTE_VERTEX_POS
 					v.vertex.xyz = vertexValue;
@@ -3226,9 +3486,12 @@ Shader "Grass"
 			{
 				SurfaceDescription surfaceDescription = (SurfaceDescription)0;
 
+				float2 uv_FoliageTexture = IN.ase_texcoord.xy * _FoliageTexture_ST.xy + _FoliageTexture_ST.zw;
+				float4 tex2DNode34 = tex2D( _FoliageTexture, uv_FoliageTexture );
+				float Alpha38 = tex2DNode34.a;
 				
 
-				surfaceDescription.Alpha = 1;
+				surfaceDescription.Alpha = Alpha38;
 				surfaceDescription.AlphaClipThreshold = 0.5;
 
 				#if _ALPHATEST_ON
@@ -3262,31 +3525,130 @@ Shader "Grass"
 }
 /*ASEBEGIN
 Version=19103
-Node;AmplifyShaderEditor.CommentaryNode;19;-2133.072,-867.9358;Inherit;False;1233.981;529.82;Comment;7;12;11;13;10;14;16;18;Quad Scattering;1,1,1,1;0;0
+Node;AmplifyShaderEditor.CommentaryNode;47;-2952.322,-929.8807;Inherit;False;861.3025;504;Albedo;5;35;37;38;34;36;;1,1,1,1;0;0
+Node;AmplifyShaderEditor.CommentaryNode;33;-2349.403,290.1144;Inherit;False;1578.666;686.0209;Comment;15;23;22;19;21;25;29;20;26;27;28;30;31;32;43;45;SubSurface;1,1,1,1;0;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;0;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;ExtraPrePass;0;0;ExtraPrePass;5;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;1;False;;0;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;0;False;False;0;;0;0;Standard;0;False;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;2;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;ShadowCaster;0;2;ShadowCaster;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;False;False;True;False;False;False;False;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;True;3;False;;False;True;1;LightMode=ShadowCaster;False;False;0;;0;0;Standard;0;False;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;3;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;DepthOnly;0;3;DepthOnly;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;False;False;True;False;False;False;False;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;False;False;True;1;LightMode=DepthOnly;False;False;0;;0;0;Standard;0;False;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;4;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;Meta;0;4;Meta;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=Meta;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;5;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;Universal2D;0;5;Universal2D;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;5;False;;10;False;;1;1;False;;10;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;1;LightMode=Universal2D;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;5;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;Universal2D;0;5;Universal2D;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;1;False;;0;False;;1;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;False;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;1;LightMode=Universal2D;False;False;0;;0;0;Standard;0;False;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;6;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;DepthNormals;0;6;DepthNormals;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;1;False;;0;False;;0;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;False;;True;3;False;;False;True;1;LightMode=DepthNormals;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;7;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;GBuffer;0;7;GBuffer;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;5;False;;10;False;;1;1;False;;10;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;1;LightMode=UniversalGBuffer;False;False;0;;0;0;Standard;0;False;0
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;7;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;GBuffer;0;7;GBuffer;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;1;False;;0;False;;1;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;1;LightMode=UniversalGBuffer;False;False;0;;0;0;Standard;0;False;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;8;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;SceneSelectionPass;0;8;SceneSelectionPass;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;2;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=SceneSelectionPass;False;False;0;;0;0;Standard;0;False;0
 Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;9;0,0;Float;False;False;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;New Amplify Shader;94348b07e5e8bab40bd6c8a1e3df54cd;True;ScenePickingPass;0;9;ScenePickingPass;0;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;1;LightMode=Picking;False;False;0;;0;0;Standard;0;False;0
-Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;1;0,0;Float;False;True;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;Grass;94348b07e5e8bab40bd6c8a1e3df54cd;True;Forward;0;1;Forward;19;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;2;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Transparent=RenderType;Queue=Transparent=Queue=0;True;3;True;12;all;0;False;True;1;5;False;;10;False;;1;1;False;;10;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;1;LightMode=UniversalForward;False;False;0;;0;0;Standard;41;Workflow;1;0;Surface;1;638117697135630588;  Refraction Model;0;0;  Blend;0;0;Two Sided;1;0;Fragment Normal Space,InvertActionOnDeselection;0;0;Forward Only;0;0;Transmission;0;0;  Transmission Shadow;0.5,False,;0;Translucency;0;0;  Translucency Strength;1,False,;0;  Normal Distortion;0.5,False,;0;  Scattering;2,False,;0;  Direct;0.9,False,;0;  Ambient;0.1,False,;0;  Shadow;0.5,False,;0;Cast Shadows;1;0;  Use Shadow Threshold;0;0;Receive Shadows;1;0;GPU Instancing;1;0;LOD CrossFade;1;0;Built-in Fog;1;0;_FinalColorxAlpha;0;0;Meta Pass;1;0;Override Baked GI;0;0;Extra Pre Pass;0;0;DOTS Instancing;0;0;Tessellation;0;0;  Phong;0;0;  Strength;0.5,False,;0;  Type;0;0;  Tess;16,False,;0;  Min;10,False,;0;  Max;25,False,;0;  Edge Length;16,False,;0;  Max Displacement;25,False,;0;Write Depth;0;0;  Early Z;0;0;Vertex Position,InvertActionOnDeselection;1;638117692941228961;Debug Display;0;0;Clear Coat;0;0;0;10;False;True;True;True;True;True;True;True;True;True;False;;False;0
-Node;AmplifyShaderEditor.TFHCRemapNode;11;-1696.072,-725.4556;Inherit;True;5;0;FLOAT2;0,0;False;1;FLOAT2;0,0;False;2;FLOAT2;1,1;False;3;FLOAT2;0,0;False;4;FLOAT2;1,1;False;1;FLOAT2;0
-Node;AmplifyShaderEditor.RangedFloatNode;13;-1642.607,-454.1159;Inherit;False;Property;_FluffyScale;Fluffy Scale;0;0;Create;True;0;0;0;False;0;False;0;0;0;0;0;1;FLOAT;0
-Node;AmplifyShaderEditor.TextureCoordinatesNode;10;-2083.071,-746.4556;Inherit;False;0;-1;2;3;2;SAMPLER2D;;False;0;FLOAT2;1,1;False;1;FLOAT2;0,0;False;5;FLOAT2;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
-Node;AmplifyShaderEditor.SimpleMultiplyOpNode;14;-1190.266,-568.8478;Inherit;False;2;2;0;FLOAT3;0,0,0;False;1;FLOAT;0;False;1;FLOAT3;0
-Node;AmplifyShaderEditor.TransformDirectionNode;16;-1420.707,-728.4248;Inherit;False;Tangent;Object;False;Fast;False;1;0;FLOAT3;0,0,0;False;4;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3
-Node;AmplifyShaderEditor.GetLocalVarNode;20;-347.9106,142.4542;Inherit;False;18;QuadScatter;1;0;OBJECT;;False;1;FLOAT3;0
-Node;AmplifyShaderEditor.RegisterLocalVarNode;18;-1123.09,-817.9357;Inherit;False;QuadScatter;-1;True;1;0;FLOAT3;0,0,0;False;1;FLOAT3;0
-Node;AmplifyShaderEditor.RangedFloatNode;12;-1997.372,-592.3557;Inherit;False;Constant;_Float0;Float 0;0;0;Create;True;0;0;0;False;0;False;-1;-1;0;0;0;1;FLOAT;0
-WireConnection;1;8;20;0
-WireConnection;11;0;10;0
-WireConnection;11;3;12;0
-WireConnection;14;0;16;0
-WireConnection;14;1;13;0
-WireConnection;16;0;11;0
-WireConnection;18;0;16;0
+Node;AmplifyShaderEditor.CommentaryNode;10;-1888.484,-774.3794;Inherit;False;1233.981;529.82;Comment;9;18;17;14;13;12;11;62;63;61;Quad Scattering;1,1,1,1;0;0
+Node;AmplifyShaderEditor.TFHCRemapNode;11;-1451.484,-631.8992;Inherit;True;5;0;FLOAT2;0,0;False;1;FLOAT2;0,0;False;2;FLOAT2;1,1;False;3;FLOAT2;0,0;False;4;FLOAT2;1,1;False;1;FLOAT2;0
+Node;AmplifyShaderEditor.TextureCoordinatesNode;12;-1838.483,-652.8992;Inherit;False;0;-1;2;3;2;SAMPLER2D;;False;0;FLOAT2;1,1;False;1;FLOAT2;0,0;False;5;FLOAT2;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.TransformDirectionNode;14;-1176.119,-634.8684;Inherit;False;Tangent;Object;False;Fast;False;1;0;FLOAT3;0,0,0;False;4;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3
+Node;AmplifyShaderEditor.RangedFloatNode;17;-1752.784,-498.7993;Inherit;False;Constant;_Float0;Float 0;0;0;Create;True;0;0;0;False;0;False;-1;-1;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.RangedFloatNode;18;-1398.019,-360.5595;Inherit;False;Property;_FluffyScale;Fluffy Scale;0;0;Create;True;0;0;0;False;0;False;0;0;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.ViewDirInputsCoordNode;19;-1579.737,340.1144;Inherit;False;World;False;0;4;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3
+Node;AmplifyShaderEditor.DotProductOpNode;21;-1294.737,404.1145;Inherit;False;2;0;FLOAT3;0,0,0;False;1;FLOAT3;0,0,0;False;1;FLOAT;0
+Node;AmplifyShaderEditor.NegateNode;25;-1425.403,500.1843;Inherit;False;1;0;FLOAT3;0,0,0;False;1;FLOAT3;0
+Node;AmplifyShaderEditor.SimpleAddOpNode;29;-1622.403,502.1843;Inherit;False;2;2;0;FLOAT3;0,0,0;False;1;FLOAT3;0,0,0;False;1;FLOAT3;0
+Node;AmplifyShaderEditor.WorldSpaceLightDirHlpNode;20;-1884.737,342.1141;Inherit;False;False;1;0;FLOAT;0;False;4;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;26;-1783.403,582.1843;Inherit;False;2;2;0;FLOAT3;0,0,0;False;1;FLOAT;0;False;1;FLOAT3;0
+Node;AmplifyShaderEditor.RangedFloatNode;27;-1938.403,740.1843;Inherit;False;Property;_SSSSize;SSS Size;1;0;Create;True;0;0;0;False;0;False;0;0;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.TransformDirectionNode;28;-2065.403,523.1843;Inherit;False;Object;World;False;Fast;False;1;0;FLOAT3;0,0,0;False;4;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3
+Node;AmplifyShaderEditor.PosVertexDataNode;30;-2299.403,520.1843;Inherit;False;0;0;5;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.ColorNode;31;-1364.53,764.1353;Inherit;False;Property;_SSSColor;SSS Color;2;0;Create;True;0;0;0;False;0;False;1,1,1,0;0,0,0,0;True;0;5;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.GetLocalVarNode;15;-269.3228,417.0106;Inherit;False;16;QuadScatter;1;0;OBJECT;;False;1;COLOR;0
+Node;AmplifyShaderEditor.GetLocalVarNode;39;-213.5055,-205.1115;Inherit;False;37;Albedo;1;0;OBJECT;;False;1;COLOR;0
+Node;AmplifyShaderEditor.GetLocalVarNode;24;-343.8025,-84.78137;Inherit;False;23;PsuedoSSS;1;0;OBJECT;;False;1;COLOR;0
+Node;AmplifyShaderEditor.RangedFloatNode;42;-433.5055,30.88849;Inherit;False;Property;_Smoothness;Smoothness;4;0;Create;True;0;0;0;False;0;False;0.3;0;0;1;0;1;FLOAT;0
+Node;AmplifyShaderEditor.GetLocalVarNode;40;-372.5055,152.8885;Inherit;False;38;Alpha;1;0;OBJECT;;False;1;FLOAT;0
+Node;AmplifyShaderEditor.RangedFloatNode;41;-326.5055,278.8885;Inherit;False;Constant;_Float1;Float 1;4;0;Create;True;0;0;0;False;0;False;0.5;0;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.GetLocalVarNode;44;-1340.853,999.3026;Inherit;False;37;Albedo;1;0;OBJECT;;False;1;COLOR;0
+Node;AmplifyShaderEditor.RegisterLocalVarNode;23;-874.7366,533.1137;Inherit;False;PsuedoSSS;-1;True;1;0;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.SaturateNode;22;-1126.737,390.1135;Inherit;False;1;0;FLOAT;0;False;1;FLOAT;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;32;-1005.53,526.1353;Inherit;False;2;2;0;FLOAT;0;False;1;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;45;-980.8525,684.3026;Inherit;False;2;2;0;COLOR;0,0,0,0;False;1;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.BlendOpsNode;43;-1138.853,766.3026;Inherit;False;ColorBurn;True;3;0;COLOR;0,0,0,0;False;1;COLOR;0,0,0,0;False;2;FLOAT;1;False;1;COLOR;0
+Node;AmplifyShaderEditor.LightColorNode;46;-1112.853,913.3026;Inherit;False;0;3;COLOR;0;FLOAT3;1;FLOAT;2
+Node;AmplifyShaderEditor.TemplateMultiPassMasterNode;1;0,0;Float;False;True;-1;2;UnityEditor.ShaderGraphLitGUI;0;12;Grass2;94348b07e5e8bab40bd6c8a1e3df54cd;True;Forward;0;1;Forward;19;False;False;False;False;False;False;False;False;False;False;False;False;True;0;False;;False;True;0;False;;False;False;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;3;RenderPipeline=UniversalPipeline;RenderType=Opaque=RenderType;Queue=Geometry=Queue=0;True;3;True;12;all;0;False;True;1;1;False;;0;False;;1;1;False;;0;False;;False;False;False;False;False;False;False;False;False;False;False;False;False;False;True;True;True;True;True;0;False;;False;False;False;False;False;False;False;True;False;0;False;;255;False;;255;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;0;False;;False;True;1;False;;True;3;False;;True;True;0;False;;0;False;;True;1;LightMode=UniversalForward;False;False;0;;0;0;Standard;41;Workflow;1;0;Surface;0;0;  Refraction Model;0;0;  Blend;0;0;Two Sided;1;638117735245960240;Fragment Normal Space,InvertActionOnDeselection;0;0;Forward Only;0;0;Transmission;0;0;  Transmission Shadow;0.5,False,;0;Translucency;0;0;  Translucency Strength;1,False,;0;  Normal Distortion;0.5,False,;0;  Scattering;2,False,;0;  Direct;0.9,False,;0;  Ambient;0.1,False,;0;  Shadow;0.5,False,;0;Cast Shadows;1;0;  Use Shadow Threshold;0;0;Receive Shadows;1;0;GPU Instancing;1;0;LOD CrossFade;1;0;Built-in Fog;1;0;_FinalColorxAlpha;0;0;Meta Pass;1;0;Override Baked GI;0;0;Extra Pre Pass;0;0;DOTS Instancing;0;0;Tessellation;0;0;  Phong;0;0;  Strength;0.5,False,;0;  Type;0;0;  Tess;16,False,;0;  Min;10,False,;0;  Max;25,False,;0;  Edge Length;16,False,;0;  Max Displacement;25,False,;0;Write Depth;0;0;  Early Z;0;0;Vertex Position,InvertActionOnDeselection;1;0;Debug Display;0;0;Clear Coat;0;0;0;10;False;True;True;True;True;True;True;True;True;True;False;;False;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;35;-2531.02,-753.8807;Inherit;False;2;2;0;COLOR;0,0,0,0;False;1;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.RegisterLocalVarNode;37;-2315.02,-767.8807;Inherit;False;Albedo;-1;True;1;0;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.RegisterLocalVarNode;38;-2565.02,-541.8807;Inherit;False;Alpha;-1;True;1;0;FLOAT;0;False;1;FLOAT;0
+Node;AmplifyShaderEditor.SamplerNode;34;-2902.322,-669.5546;Inherit;True;Property;_FoliageTexture;Foliage Texture;3;0;Create;True;0;0;0;False;0;False;-1;None;None;True;0;False;white;Auto;False;Object;-1;Auto;Texture2D;8;0;SAMPLER2D;;False;1;FLOAT2;0,0;False;2;FLOAT;0;False;3;FLOAT2;0,0;False;4;FLOAT2;0,0;False;5;FLOAT;1;False;6;FLOAT;0;False;7;SAMPLERSTATE;;False;5;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.ColorNode;36;-2870.02,-879.8807;Inherit;False;Property;_FoliageColor;Foliage Color;5;1;[HDR];Create;True;0;0;0;False;0;False;1,1,1,0;1,1,1,0;True;0;5;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.WorldPosInputsNode;48;-1776.188,1620.219;Inherit;False;0;4;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3
+Node;AmplifyShaderEditor.DynamicAppendNode;49;-1507.337,1531.376;Inherit;False;FLOAT2;4;0;FLOAT;0;False;1;FLOAT;0;False;2;FLOAT;0;False;3;FLOAT;0;False;1;FLOAT2;0
+Node;AmplifyShaderEditor.SamplerNode;52;-1147.354,1516.841;Inherit;True;Property;_WindNoiseTex;Wind Noise Tex;6;0;Create;True;0;0;0;False;0;False;-1;None;None;True;0;False;white;Auto;False;Object;-1;Auto;Texture2D;8;0;SAMPLER2D;;False;1;FLOAT2;0,0;False;2;FLOAT;0;False;3;FLOAT2;0,0;False;4;FLOAT2;0,0;False;5;FLOAT;1;False;6;FLOAT;0;False;7;SAMPLERSTATE;;False;5;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;50;-1355.354,1571.841;Inherit;False;2;2;0;FLOAT2;0,0;False;1;FLOAT;0;False;1;FLOAT2;0
+Node;AmplifyShaderEditor.PannerNode;54;-1300.354,1735.841;Inherit;False;3;0;FLOAT2;0,0;False;2;FLOAT2;1,1;False;1;FLOAT;1;False;1;FLOAT2;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;56;-1469.354,1866.841;Inherit;False;2;2;0;FLOAT;0;False;1;FLOAT;0;False;1;FLOAT;0
+Node;AmplifyShaderEditor.GetLocalVarNode;59;-566.324,-68.20401;Inherit;False;58;WindScrolling;1;0;OBJECT;;False;1;COLOR;0
+Node;AmplifyShaderEditor.RangedFloatNode;57;-1609.354,1793.841;Inherit;False;Property;_WindScroll;Wind Scroll;7;0;Create;True;0;0;0;False;0;False;0;0;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.RegisterLocalVarNode;16;-317.5021,-472.3793;Inherit;False;QuadScatter;-1;True;1;0;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.SimpleAddOpNode;60;-666.9978,-612.7175;Inherit;False;2;2;0;FLOAT3;0,0,0;False;1;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.GetLocalVarNode;62;-1079.998,-350.7175;Inherit;False;58;WindScrolling;1;0;OBJECT;;False;1;COLOR;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;13;-948.6782,-610.2914;Inherit;False;2;2;0;FLOAT3;0,0,0;False;1;FLOAT;0;False;1;FLOAT3;0
+Node;AmplifyShaderEditor.NormalVertexDataNode;61;-1059.998,-485.7175;Inherit;False;0;5;FLOAT3;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;63;-760.9978,-469.7175;Inherit;False;2;2;0;FLOAT3;0,0,0;False;1;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.RangedFloatNode;51;-1524.354,1673.841;Inherit;False;Constant;_NoiseSize;Noise Size;6;0;Create;True;0;0;0;False;0;False;0.1;0;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;64;-1250.021,1932.509;Inherit;False;2;2;0;FLOAT2;0,0;False;1;FLOAT2;2,2;False;1;FLOAT2;0
+Node;AmplifyShaderEditor.PannerNode;65;-1034.021,1929.509;Inherit;False;3;0;FLOAT2;0,0;False;2;FLOAT2;0,0;False;1;FLOAT;1;False;1;FLOAT2;0
+Node;AmplifyShaderEditor.SamplerNode;66;-818.0208,1892.509;Inherit;True;Property;_TextureSample0;Texture Sample 0;6;0;Create;True;0;0;0;False;0;False;-1;None;None;True;0;False;white;Auto;False;Instance;52;Auto;Texture2D;8;0;SAMPLER2D;;False;1;FLOAT2;0,0;False;2;FLOAT;0;False;3;FLOAT2;0,0;False;4;FLOAT2;0,0;False;5;FLOAT;1;False;6;FLOAT;0;False;7;SAMPLERSTATE;;False;5;COLOR;0;FLOAT;1;FLOAT;2;FLOAT;3;FLOAT;4
+Node;AmplifyShaderEditor.SimpleTimeNode;55;-1641.354,1982.841;Inherit;False;1;0;FLOAT;1;False;1;FLOAT;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;68;-1322.021,2152.509;Inherit;False;2;2;0;FLOAT;0;False;1;FLOAT;0;False;1;FLOAT;0
+Node;AmplifyShaderEditor.RangedFloatNode;69;-1590.021,2172.509;Inherit;False;Property;_WindJitter;Wind Jitter;8;0;Create;True;0;0;0;False;0;False;0;0;0;0;0;1;FLOAT;0
+Node;AmplifyShaderEditor.RegisterLocalVarNode;58;-429.6547,1600.842;Inherit;False;WindScrolling;-1;True;1;0;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.SimpleMultiplyOpNode;71;-638.9927,1562.325;Inherit;False;2;2;0;COLOR;0,0,0,0;False;1;COLOR;0,0,0,0;False;1;COLOR;0
+Node;AmplifyShaderEditor.PowerNode;70;-813.1922,1542.825;Inherit;False;False;2;0;COLOR;0,0,0,0;False;1;FLOAT;1.5;False;1;COLOR;0
+WireConnection;11;0;12;0
+WireConnection;11;3;17;0
+WireConnection;14;0;11;0
+WireConnection;21;0;19;0
+WireConnection;21;1;25;0
+WireConnection;25;0;29;0
+WireConnection;29;0;20;0
+WireConnection;29;1;26;0
+WireConnection;26;0;28;0
+WireConnection;26;1;27;0
+WireConnection;28;0;30;0
+WireConnection;23;0;32;0
+WireConnection;22;0;21;0
+WireConnection;32;0;22;0
+WireConnection;32;1;45;0
+WireConnection;45;0;43;0
+WireConnection;45;1;46;0
+WireConnection;43;0;31;0
+WireConnection;43;1;44;0
+WireConnection;1;0;39;0
+WireConnection;1;2;24;0
+WireConnection;1;4;42;0
+WireConnection;1;6;40;0
+WireConnection;1;7;41;0
+WireConnection;1;8;15;0
+WireConnection;35;0;36;0
+WireConnection;35;1;34;0
+WireConnection;37;0;35;0
+WireConnection;38;0;34;4
+WireConnection;49;0;48;1
+WireConnection;49;1;48;3
+WireConnection;52;1;54;0
+WireConnection;50;0;49;0
+WireConnection;50;1;51;0
+WireConnection;54;0;50;0
+WireConnection;54;1;56;0
+WireConnection;56;0;57;0
+WireConnection;56;1;55;0
+WireConnection;16;0;60;0
+WireConnection;60;0;13;0
+WireConnection;60;1;63;0
+WireConnection;13;0;14;0
+WireConnection;13;1;18;0
+WireConnection;63;0;61;0
+WireConnection;63;1;62;0
+WireConnection;64;0;50;0
+WireConnection;65;0;64;0
+WireConnection;65;1;68;0
+WireConnection;66;1;65;0
+WireConnection;68;0;55;0
+WireConnection;68;1;69;0
+WireConnection;58;0;71;0
+WireConnection;71;0;70;0
+WireConnection;71;1;66;0
+WireConnection;70;0;52;0
 ASEEND*/
-//CHKSM=3B502292723C68BB40F903828777577181988FCE
+//CHKSM=900658660D917667ED3AE372DA5CA234409A63B0
