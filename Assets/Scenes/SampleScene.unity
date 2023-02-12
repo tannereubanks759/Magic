@@ -193,6 +193,7 @@ MonoBehaviour:
   cam: {fileID: 963194227}
   jumpKey: 32
   jumpForce: 20
+  anim: {fileID: 6823840692770442148}
 --- !u!143 &232474722
 CharacterController:
   m_ObjectHideFlags: 0
@@ -389,6 +390,37 @@ Transform:
   - {fileID: 6823840692770442147}
   m_Father: {fileID: 232474714}
   m_RootOrder: 0
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1432162891
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1432162892}
+  m_Layer: 0
+  m_Name: tip
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1432162892
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1432162891}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 16.4}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6823840692770442147}
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1444330345
 GameObject:
@@ -827,6 +859,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6823840692770442147}
   - component: {fileID: 6823840692770442148}
+  - component: {fileID: 6823840692770442149}
   m_Layer: 0
   m_Name: wand
   m_TagString: Untagged
@@ -847,6 +880,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 361178590811420281}
+  - {fileID: 1432162892}
   m_Father: {fileID: 963194228}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: -44.001, y: 0, z: 0}
@@ -870,6 +904,22 @@ Animator:
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
+--- !u!114 &6823840692770442149
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6194972145982918937}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0ed390faf1f64c42ad1d80f52fb06be, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  tip: {fileID: 1432162892}
+  fpsCam: {fileID: 963194227}
+  anim: {fileID: 6823840692770442148}
+  fireBall: {fileID: 8907986726228075316, guid: c4d449e937c69b14eba4ce979ac24c8f, type: 3}
 --- !u!1 &7746389343056847432
 GameObject:
   m_ObjectHideFlags: 0
