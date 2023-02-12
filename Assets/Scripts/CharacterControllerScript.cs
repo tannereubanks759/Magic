@@ -28,6 +28,11 @@ public class CharacterControllerScript : MonoBehaviour
     private bool isGrounded;
     public KeyCode jumpKey = KeyCode.Space;
     public float jumpForce;
+
+    //casting
+    public Animator anim;
+
+
     // Start is called before the first frame update
     void Start()
     {
@@ -54,8 +59,6 @@ public class CharacterControllerScript : MonoBehaviour
 
         cam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
         transform.rotation = Quaternion.Euler(0, yRotation, 0);
-
-        
     }
     private void FixedUpdate()
     {
