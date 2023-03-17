@@ -6358,6 +6358,7 @@ GameObject:
   - component: {fileID: 8888052723397522076}
   - component: {fileID: 190810677543175170}
   - component: {fileID: 8620989916296009949}
+  - component: {fileID: 8888052723397522077}
   m_Layer: 0
   m_Name: Cube
   m_TagString: Untagged
@@ -6608,3 +6609,16 @@ Transform:
   m_Father: {fileID: 5704110530951670265}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!135 &8888052723397522077
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4841308847644556406}
+  m_Material: {fileID: 0}
+  m_IsTrigger: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 1.8489349
+  m_Center: {x: 0.15220153, y: 0.043002244, z: 0.027136441}

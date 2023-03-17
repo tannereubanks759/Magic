@@ -59,6 +59,8 @@ public class CharacterControllerScript : MonoBehaviour
 
         cam.transform.localRotation = Quaternion.Euler(xRotation, 0, 0);
         transform.rotation = Quaternion.Euler(0, yRotation, 0);
+
+        
     }
     private void FixedUpdate()
     {
